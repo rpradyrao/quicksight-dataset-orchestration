@@ -1,0 +1,62 @@
+{
+  "Comment": "QuickSight Dataset Ingestion Workflow",
+  "StartAt": "InitiateIngestion",
+  "States": {
+    "InitiateIngestion": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-1:442755536626:function:invokeqsds",
+        "Payload": {
+          "account_id.$": "$.account_id",
+          "dataset_id.$": "$.dataset_id"
+        }
+      },
+      "ResultPath": "$.initiateResult",
+      "Next": "WaitForIngestion"
+    },
+    "WaitForIngestion": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckIngestionStatus"
+    },
+    "CheckIngestionStatus": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "arn:aws:lambda:us-east-1:442755536626:function:checkqsdsstatus",
+        "Payload": {
+          "account_id.$": "$.account_id",
+          "dataset_id.$": "$.dataset_id"
+        }
+      },
+      "ResultPath": "$.statusResult",
+      "Next": "EvaluateStatus"
+    },
+    "EvaluateStatus": {
+      "Type": "Choice",
+      "Choices": [
+        {
+          "Variable": "$.statusResult.Payload.body.status",
+          "StringEquals": "COMPLETED",
+          "Next": "IngestionSucceeded"
+        },
+        {
+          "Variable": "$.statusResult.Payload.body.status",
+          "StringEquals": "FAILED",
+          "Next": "IngestionFailed"
+        }
+      ],
+      "Default": "WaitForIngestion"
+    },
+    "IngestionSucceeded": {
+      "Type": "Succeed",
+      "OutputPath": "$.statusResult.Payload.body"
+    },
+    "IngestionFailed": {
+      "Type": "Fail",
+      "Error": "IngestionFailed",
+      "Cause": "QuickSight dataset ingestion failed. Check error details in the execution history."
+    }
+  }
+}
