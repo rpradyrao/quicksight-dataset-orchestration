@@ -11,8 +11,6 @@ The code in this repository helps you set up the following target architecture:
 
 
     
-
-For prerequisites and instructions for using this AWS Prescriptive Guidance pattern, see [QuickSight Refresh Workflow](link to pattern).
 Components
 
     Amazon EventBridge (Refresh Scheduler)
