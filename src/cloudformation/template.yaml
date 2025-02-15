@@ -1,0 +1,289 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'QuickSight Dataset Refresh Workflow - Deploys Lambda functions, Step Functions state machine, and associated resources'
+
+Parameters:
+  AccountId:
+    Type: String
+    Description: AWS Account ID where QuickSight dataset exists
+  
+  DatasetId:
+    Type: String
+    Description: QuickSight Dataset ID to refresh
+
+Resources:
+  # IAM Roles
+  InitiatorLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: QuickSightAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: quicksight:CreateIngestion
+                Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AccountId}:dataset/*
+
+  StatusCheckerLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: QuickSightAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: 
+                  - quicksight:ListIngestions
+                  - quicksight:DescribeIngestion
+                Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AccountId}:dataset/*
+
+  StepFunctionsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: states.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaInvoke
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource:
+                  - !GetAtt InitiatorLambda.Arn
+                  - !GetAtt StatusCheckerLambda.Arn
+
+  # Lambda Functions
+  InitiatorLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt InitiatorLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import uuid
+          from typing import Dict, Any
+          from botocore.exceptions import ClientError
+          
+          def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
+              """
+              Initiates a QuickSight dataset ingestion
+              """
+              try:
+                  # Extract parameters from the event
+                  account_id = event['account_id']
+                  dataset_id = event['dataset_id']
+                  
+                  # Initialize QuickSight client
+                  quicksight = boto3.client('quicksight')
+                  
+                  # Generate unique ingestion ID
+                  ingestion_id = str(uuid.uuid4())
+                  
+                  # Initiate dataset ingestion
+                  response = quicksight.create_ingestion(
+                      DataSetId=dataset_id,
+                      IngestionId=ingestion_id,
+                      AwsAccountId=account_id
+                  )
+                  
+                  # Return success response
+                  return {
+                      'statusCode': 200,
+                      'body': {
+                          'message': 'Dataset ingestion initiated successfully',
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'ingestion_id': ingestion_id,
+                          'ingestion_status': response['IngestionStatus'],
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
+                  
+                  
+              except Exception as e:
+                  # Handle unexpected errors
+                  return {
+                      'statusCode': 500,
+                      'body': {
+                          'error': 'Internal Error',
+                          'message': str(e),
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
+
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 128
+
+  StatusCheckerLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt StatusCheckerLambdaRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          from typing import Dict, Any
+          from botocore.exceptions import ClientError
+          
+          def lambda_handler(event: Dict[str, Any], context) -> Dict[str, Any]:
+              """
+              Checks most recent QuickSight dataset ingestion status
+              """
+              try:
+                  # Extract parameters from the event
+                  account_id = event['account_id']
+                  dataset_id = event['dataset_id']
+                  
+                  # Initialize QuickSight client
+                  quicksight = boto3.client('quicksight')
+                  
+                  # Get list of ingestions (most recent first)
+                  list_response = quicksight.list_ingestions(
+                      DataSetId=dataset_id,
+                      AwsAccountId=account_id,
+                      MaxResults=1  # We only need the most recent
+                  )
+                  
+                  if not list_response['Ingestions']:
+                      return {
+                          'statusCode': 404,
+                          'body': {
+                              'message': 'No ingestions found for dataset',
+                              'account_id': account_id,
+                              'dataset_id': dataset_id,
+                              'aws_request_id': context.aws_request_id
+                          }
+                      }
+                      
+                  most_recent_ingestion = list_response['Ingestions'][0]
+                  ingestion_id = most_recent_ingestion['IngestionId']
+                  
+                  # Get detailed status
+                  response = quicksight.describe_ingestion(
+                      DataSetId=dataset_id,
+                      IngestionId=ingestion_id,
+                      AwsAccountId=account_id
+                  )
+                  
+                  ingestion_status = response['Ingestion']['IngestionStatus']
+                  
+                  return {
+                      'statusCode': 200,
+                      'body': {
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'ingestion_id': ingestion_id,
+                          'ingestion_status': ingestion_status,
+                          'status': 'IN_PROGRESS' if ingestion_status == 'RUNNING' else ingestion_status,
+                          'error_info': response['Ingestion'].get('ErrorInfo', None),
+                          'row_info': response['Ingestion'].get('RowInfo', None),
+                          'queued_time': str(response['Ingestion'].get('QueuedTime')),
+                          'ingestion_time_in_seconds': response['Ingestion'].get('IngestionTimeInSeconds'),
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
+                  
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': {
+                          'error': 'Internal Error',
+                          'message': str(e),
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
+
+      Runtime: python3.9
+      Timeout: 30
+      MemorySize: 128
+
+  # Step Functions State Machine
+  RefreshWorkflow:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      RoleArn: !GetAtt StepFunctionsRole.Arn
+      DefinitionString: !Sub |
+        {
+          "Comment": "QuickSight Dataset Ingestion Workflow",
+          "StartAt": "InitiateIngestion",
+          "States": {
+            "InitiateIngestion": {
+              "Type": "Task",
+              "Resource": "${InitiatorLambda.Arn}",
+              "Parameters": {
+                "account_id.$": "$.account_id",
+                "dataset_id.$": "$.dataset_id"
+              },
+              "ResultPath": "$.initiateResult",
+              "Next": "WaitForIngestion"
+            },
+            [Insert rest of state machine definition]
+          }
+        }
+
+  # CloudWatch Alarm
+  RefreshFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Alert on QuickSight refresh failure
+      MetricName: ExecutionsFailed
+      Namespace: AWS/States
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      ThresholdType: static
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref RefreshWorkflow
+      AlarmActions:
+        - !Ref NotificationTopic
+
+  # SNS Topic
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: QuickSight-Refresh-Notifications
+
+Outputs:
+  StateMachineArn:
+    Description: ARN of the Step Functions state machine
+    Value: !Ref RefreshWorkflow
+
+  NotificationTopicArn:
+    Description: ARN of the SNS notification topic
+    Value: !Ref NotificationTopic
