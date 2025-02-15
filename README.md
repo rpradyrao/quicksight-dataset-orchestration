@@ -25,12 +25,41 @@ Components
 Repository Structure
 
 ```    
-.
+quicksight-refresh-workflow/
+├── LICENSE
 ├── README.md
+├── CONTRIBUTING.md
+├── .gitignore
+│
 ├── src/
 │   ├── lambda/
-│   │   ├── refresh_initiator/
+│   │   ├── initiator/
+│   │   │   ├── index.py
+│   │   │   └── requirements.txt
 │   │   └── status_checker/
-│   └── statemachine/
-└── iam/
+│   │       ├── index.py
+│   │       └── requirements.txt
+│   │
+│   ├── stepfunctions/
+│   │   └── state_machine.json
+│   │
+│   └── cloudformation/
+│       └── template.yaml
+│
+├── tests/
+│   ├── events/
+│   │   ├── initiator_event.json
+│   │   ├── status_checker_event.json
+│   │   ├── step_functions_input.json
+│   │   ├── sample_responses.json
+│   └── unit/
+│       └── README.md
+│
+└── docs/
+    ├── setup-guide.md
+    ├── architecture.md
+    ├── testing.md
+    └── images/
+        └── architecture.png
+
 ```
