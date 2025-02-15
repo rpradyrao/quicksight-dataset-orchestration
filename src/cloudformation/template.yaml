@@ -10,11 +10,22 @@ Parameters:
     Type: String
     Description: QuickSight Dataset ID to refresh
 
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues: [dev, test, prod]
+    Description: Environment name for resource identification
+
+  NotificationEmail:
+    Type: String
+    Description: Email address for refresh notifications
+
 Resources:
   # IAM Roles
   InitiatorLambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub quicksight-refresh-initiator-${Environment}
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -32,10 +43,18 @@ Resources:
               - Effect: Allow
                 Action: quicksight:CreateIngestion
                 Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AccountId}:dataset/*
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
 
   StatusCheckerLambdaRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub quicksight-refresh-status-${Environment}
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -55,10 +74,18 @@ Resources:
                   - quicksight:ListIngestions
                   - quicksight:DescribeIngestion
                 Resource: !Sub arn:aws:quicksight:${AWS::Region}:${AccountId}:dataset/*
+        - PolicyName: CloudWatchMetrics
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: '*'
 
   StepFunctionsRole:
     Type: AWS::IAM::Role
     Properties:
+      RoleName: !Sub quicksight-refresh-sfn-${Environment}
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -76,11 +103,22 @@ Resources:
                 Resource:
                   - !GetAtt InitiatorLambda.Arn
                   - !GetAtt StatusCheckerLambda.Arn
+        - PolicyName: CloudWatchLogs
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:*
 
   # Lambda Functions
   InitiatorLambda:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: !Sub quicksight-refresh-initiator-${Environment}
       Handler: index.lambda_handler
       Role: !GetAtt InitiatorLambdaRole.Arn
       Code:
@@ -126,9 +164,21 @@ Resources:
                       }
                   }
                   
+              except ClientError as e:
+                  error_code = e.response['Error']['Code']
+                  error_message = e.response['Error']['Message']
+                  return {
+                      'statusCode': 500,
+                      'body': {
+                          'error': f"AWS Error: {error_code}",
+                          'message': error_message,
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
                   
               except Exception as e:
-                  # Handle unexpected errors
                   return {
                       'statusCode': 500,
                       'body': {
@@ -139,14 +189,17 @@ Resources:
                           'aws_request_id': context.aws_request_id
                       }
                   }
-
       Runtime: python3.9
       Timeout: 30
       MemorySize: 128
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
 
   StatusCheckerLambda:
     Type: AWS::Lambda::Function
     Properties:
+      FunctionName: !Sub quicksight-refresh-status-${Environment}
       Handler: index.lambda_handler
       Role: !GetAtt StatusCheckerLambdaRole.Arn
       Code:
@@ -172,7 +225,7 @@ Resources:
                   list_response = quicksight.list_ingestions(
                       DataSetId=dataset_id,
                       AwsAccountId=account_id,
-                      MaxResults=1  # We only need the most recent
+                      MaxResults=1
                   )
                   
                   if not list_response['Ingestions']:
@@ -214,6 +267,20 @@ Resources:
                       }
                   }
                   
+              except ClientError as e:
+                  error_code = e.response['Error']['Code']
+                  error_message = e.response['Error']['Message']
+                  return {
+                      'statusCode': 500,
+                      'body': {
+                          'error': f"AWS Error: {error_code}",
+                          'message': error_message,
+                          'account_id': account_id,
+                          'dataset_id': dataset_id,
+                          'aws_request_id': context.aws_request_id
+                      }
+                  }
+                  
               except Exception as e:
                   return {
                       'statusCode': 500,
@@ -225,15 +292,18 @@ Resources:
                           'aws_request_id': context.aws_request_id
                       }
                   }
-
       Runtime: python3.9
       Timeout: 30
       MemorySize: 128
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
 
   # Step Functions State Machine
   RefreshWorkflow:
     Type: AWS::StepFunctions::StateMachine
     Properties:
+      StateMachineName: !Sub quicksight-refresh-workflow-${Environment}
       RoleArn: !GetAtt StepFunctionsRole.Arn
       DefinitionString: !Sub |
         {
@@ -242,90 +312,100 @@ Resources:
           "States": {
             "InitiateIngestion": {
               "Type": "Task",
-              "Resource": "${InitiatorLambda.Arn}",
+              "Resource": "arn:aws:states:::lambda:invoke",
               "Parameters": {
-                "account_id.$": "$.account_id",
-                "dataset_id.$": "$.dataset_id"
+                "FunctionName": "${InitiatorLambda.Arn}",
+                "Payload.$": "$"
               },
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
               "ResultPath": "$.initiateResult",
               "Next": "WaitForIngestion"
             },
-            {
-              "Comment": "QuickSight Dataset Ingestion Workflow",
-              "StartAt": "InitiateIngestion",
-              "States": {
-                "InitiateIngestion": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "Parameters": {
-                    "FunctionName": "arn:aws:lambda:us-east-1:442755536626:function:invokeqsds",
-                    "Payload": {
-                      "account_id.$": "$.account_id",
-                      "dataset_id.$": "$.dataset_id"
-                    }
-                  },
-                  "ResultPath": "$.initiateResult",
-                  "Next": "WaitForIngestion"
-                },
-                "WaitForIngestion": {
-                  "Type": "Wait",
-                  "Seconds": 60,
-                  "Next": "CheckIngestionStatus"
-                },
-                "CheckIngestionStatus": {
-                  "Type": "Task",
-                  "Resource": "arn:aws:states:::lambda:invoke",
-                  "Parameters": {
-                    "FunctionName": "arn:aws:lambda:us-east-1:442755536626:function:checkqsdsstatus",
-                    "Payload": {
-                      "account_id.$": "$.account_id",
-                      "dataset_id.$": "$.dataset_id"
-                    }
-                  },
-                  "ResultPath": "$.statusResult",
-                  "Next": "EvaluateStatus"
-                },
-                "EvaluateStatus": {
-                  "Type": "Choice",
-                  "Choices": [
-                    {
-                      "Variable": "$.statusResult.Payload.body.status",
-                      "StringEquals": "COMPLETED",
-                      "Next": "IngestionSucceeded"
-                    },
-                    {
-                      "Variable": "$.statusResult.Payload.body.status",
-                      "StringEquals": "FAILED",
-                      "Next": "IngestionFailed"
-                    }
-                  ],
-                  "Default": "WaitForIngestion"
-                },
-                "IngestionSucceeded": {
-                  "Type": "Succeed",
-                  "OutputPath": "$.statusResult.Payload.body"
-                },
-                "IngestionFailed": {
-                  "Type": "Fail",
-                  "Error": "IngestionFailed",
-                  "Cause": "QuickSight dataset ingestion failed. Check error details in the execution history."
+            "WaitForIngestion": {
+              "Type": "Wait",
+              "Seconds": 60,
+              "Next": "CheckIngestionStatus"
+            },
+            "CheckIngestionStatus": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${StatusCheckerLambda.Arn}",
+                "Payload.$": "$"
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.TaskFailed"],
+                  "IntervalSeconds": 30,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
                 }
-              }
+              ],
+              "ResultPath": "$.statusResult",
+              "Next": "EvaluateStatus"
+            },
+            "EvaluateStatus": {
+              "Type": "Choice",
+              "Choices": [
+                {
+                  "Variable": "$.statusResult.Payload.body.status",
+                  "StringEquals": "COMPLETED",
+                  "Next": "IngestionSucceeded"
+                },
+                {
+                  "Variable": "$.statusResult.Payload.body.status",
+                  "StringEquals": "FAILED",
+                  "Next": "IngestionFailed"
+                }
+              ],
+              "Default": "WaitForIngestion"
+            },
+            "IngestionSucceeded": {
+              "Type": "Succeed",
+              "OutputPath": "$.statusResult.Payload.body"
+            },
+            "IngestionFailed": {
+              "Type": "Fail",
+              "Error": "IngestionFailed",
+              "Cause": "QuickSight dataset ingestion failed. Check error details in the execution history."
             }
           }
         }
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topic and Subscription
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub quicksight-refresh-notifications-${Environment}
+
+  NotificationSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      TopicArn: !Ref NotificationTopic
+      Endpoint: !Ref NotificationEmail
 
   # CloudWatch Alarm
   RefreshFailureAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
+      AlarmName: !Sub QuickSight-Refresh-Failure-${Environment}
       AlarmDescription: Alert on QuickSight refresh failure
       MetricName: ExecutionsFailed
       Namespace: AWS/States
       Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
-      ThresholdType: static
       Threshold: 1
       ComparisonOperator: GreaterThanOrEqualToThreshold
       Dimensions:
@@ -333,18 +413,30 @@ Resources:
           Value: !Ref RefreshWorkflow
       AlarmActions:
         - !Ref NotificationTopic
-
-  # SNS Topic
-  NotificationTopic:
-    Type: AWS::SNS::Topic
-    Properties:
-      DisplayName: QuickSight-Refresh-Notifications
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
 
 Outputs:
   StateMachineArn:
     Description: ARN of the Step Functions state machine
     Value: !Ref RefreshWorkflow
+    Export:
+      Name: !Sub ${AWS::StackName}-StateMachineArn
 
   NotificationTopicArn:
     Description: ARN of the SNS notification topic
     Value: !Ref NotificationTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-NotificationTopicArn
+
+  InitiatorLambdaArn:
+    Description: ARN of the Initiator Lambda function
+    Value: !GetAtt InitiatorLambda.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-InitiatorLambdaArn
+
+  StatusCheckerLambdaArn:
+    Description: ARN of the Status Checker Lambda function
+    Value: !GetAtt StatusCheckerLambda.Arn
+    Export:
