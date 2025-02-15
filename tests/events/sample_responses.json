@@ -1,0 +1,66 @@
+{
+    "initiator_success_response": {
+        "statusCode": 200,
+        "body": {
+            "message": "Dataset ingestion initiated successfully",
+            "account_id": "111122223333",
+            "dataset_id": "11111111-2222-3333-4444-555555555555",
+            "ingestion_id": "2024-001",
+            "ingestion_status": "INITIATED",
+            "aws_request_id": "sample-request-id"
+        }
+    },
+    "status_checker_responses": {
+        "in_progress": {
+            "statusCode": 200,
+            "body": {
+                "account_id": "111122223333",
+                "dataset_id": "11111111-2222-3333-4444-555555555555",
+                "ingestion_id": "2024-001",
+                "ingestion_status": "RUNNING",
+                "status": "IN_PROGRESS",
+                "error_info": null,
+                "row_info": null,
+                "queued_time": "2024-02-15T10:00:00Z",
+                "ingestion_time_in_seconds": 30,
+                "aws_request_id": "sample-request-id"
+            }
+        },
+        "completed": {
+            "statusCode": 200,
+            "body": {
+                "account_id": "111122223333",
+                "dataset_id": "11111111-2222-3333-4444-555555555555",
+                "ingestion_id": "2024-001",
+                "ingestion_status": "COMPLETED",
+                "status": "COMPLETED",
+                "error_info": null,
+                "row_info": {
+                    "rowsIngested": 1000,
+                    "rowsDropped": 0
+                },
+                "queued_time": "2024-02-15T10:00:00Z",
+                "ingestion_time_in_seconds": 120,
+                "aws_request_id": "sample-request-id"
+            }
+        },
+        "failed": {
+            "statusCode": 200,
+            "body": {
+                "account_id": "111122223333",
+                "dataset_id": "11111111-2222-3333-4444-555555555555",
+                "ingestion_id": "2024-001",
+                "ingestion_status": "FAILED",
+                "status": "FAILED",
+                "error_info": {
+                    "message": "Sample error message",
+                    "type": "INTERNAL_ERROR"
+                },
+                "row_info": null,
+                "queued_time": "2024-02-15T10:00:00Z",
+                "ingestion_time_in_seconds": 60,
+                "aws_request_id": "sample-request-id"
+            }
+        }
+    }
+}
