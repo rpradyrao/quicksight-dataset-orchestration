@@ -7,7 +7,8 @@ This cloud-native pattern implements a sample solution using AWS Step Functions 
 The code in this repository helps you set up the following target architecture:
 
     
-![QS_Orchestrate(1)](https://github.com/user-attachments/assets/964cd654-6ef9-4d1e-9933-f2017b674a3d)
+
+![QS_Orchestrate(3)](https://github.com/user-attachments/assets/abde5600-5f8b-48d7-8b51-79d1f2695d45)
 
 
     
