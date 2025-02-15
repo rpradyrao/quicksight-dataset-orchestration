@@ -48,12 +48,10 @@ quicksight-refresh-workflow/
 │
 ├── tests/
 │   ├── events/
-│   │   ├── initiator_event.json
-│   │   ├── status_checker_event.json
-│   │   ├── step_functions_input.json
-│   │   ├── sample_responses.json
-│   └── unit/
-│       └── README.md
+│      ├── initiator_event.json
+│      ├── status_checker_event.json
+│      ├── step_functions_input.json
+│      ├── sample_responses.json
 │
 └── docs/
     ├── setup-guide.md
