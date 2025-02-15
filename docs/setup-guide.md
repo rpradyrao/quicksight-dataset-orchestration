@@ -8,6 +8,77 @@
   - Step Functions state machine
   - IAM roles
   - CloudWatch alarms (optional)
+### IAM Permissions Reference
+
+#### Lambda Function Permissions
+
+1. **Initiator Lambda Role**
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "quicksight:CreateIngestion"
+            ],
+            "Resource": "arn:aws:quicksight:*:${AccountId}:dataset/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}
+```
+2. **Status Checker Lambda Role**
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "quicksight:ListIngestions",
+                "quicksight:DescribeIngestion"
+            ],
+            "Resource": "arn:aws:quicksight:*:${AccountId}:dataset/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+        }
+    ]
+}
+```
+2. **Step Functions State Machine Role**
+```
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "lambda:InvokeFunction"
+            ],
+            "Resource": [
+                "arn:aws:lambda:${Region}:${AccountId}:function:quicksight-refresh-initiator",
+                "arn:aws:lambda:${Region}:${AccountId}:function:quicksight-refresh-status-checker"
+            ]
+        }
+    ]
+}
+```
 
 ## Deployment Options
 
