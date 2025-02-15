@@ -396,12 +396,12 @@ Resources:
       Endpoint: !Ref NotificationEmail
 
   # CloudWatch Alarm
-  RefreshFailureAlarm:
+  RefreshSuccessAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmName: !Sub QuickSight-Refresh-Failure-${Environment}
-      AlarmDescription: Alert on QuickSight refresh failure
-      MetricName: ExecutionsFailed
+      AlarmName: !Sub QuickSight-Refresh-Success-${Environment}
+      AlarmDescription: Alert on QuickSight refresh success
+      MetricName: ExecutionsSucceeded
       Namespace: AWS/States
       Statistic: Sum
       Period: 300
