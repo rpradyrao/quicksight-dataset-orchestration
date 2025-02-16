@@ -70,8 +70,20 @@ The code in this repository helps you set up the following target architecture:
     
     Delivers success/failure notifications to subscribers
 
+### Workflow Visualizations:
+
+The workflow consists of the following states:
+1. **InitiateIngestion**: Triggers the dataset refresh
+2. **WaitForIngestion**: Waits for 60 seconds
+3. **CheckIngestionStatus**: Polls for refresh status
+4. **EvaluateStatus**: Makes decisions based on status
+5. **IngestionSucceeded/Failed**: Terminal states
+
+
+![Screenshot 2025-02-13 at 9 22 36 AM](https://github.com/user-attachments/assets/a9e0a959-6d18-4cea-acc6-1b1baacbe0f1)
+
     
-Components
+### Components
 
     Amazon EventBridge (Refresh Scheduler)
     AWS Step Functions (Dataset Refresh Flow)
@@ -80,7 +92,7 @@ Components
     Amazon CloudWatch (Execution Logs & Alarms)
     Amazon SNS (Refresh Notifications)
 
-Repository Structure
+### Repository Structure
 
 ```    
 quicksight-refresh-workflow/
