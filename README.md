@@ -105,11 +105,8 @@ quicksight-refresh-workflow/
 │   ├── lambda/
 │   │   ├── initiator/
 │   │   │   ├── index.py
-│   │   │   └── requirements.txt
 │   │   └── status_checker/
 │   │       ├── index.py
-│   │       └── requirements.txt
-│   │
 │   ├── stepfunctions/
 │   │   └── state_machine.json
 │   │
@@ -125,9 +122,6 @@ quicksight-refresh-workflow/
 │
 └── docs/
     ├── setup-guide.md
-    ├── architecture.md
-    ├── testing.md
-    └── images/
-        └── architecture.png
+    ├── architecture.md  
 
 ```
