@@ -92,6 +92,67 @@ The workflow consists of the following states:
     Amazon CloudWatch (Execution Logs & Alarms)
     Amazon SNS (Refresh Notifications)
 
+### Automation and scale
+
+#### Dynamic Configuration
+
+* Store dataset IDs and account IDs in AWS Systems Manager Parameter Store
+* Update Step Functions to fetch configuration at runtime, enabling dynamic management for multi-account set up
+
+#### Parallel Execution
+
+* Modify Step Functions to support concurrent refresh of multiple datasets
+* Implement Map state in Step Functions for parallel processing of dataset
+
+#### Centralized Monitoring(Multi-Account)
+
+* Aggregate CloudWatch Logs across accounts using CloudWatch Logs Insights
+* Create cross-account CloudWatch dashboards for unified monitoring
+
+
+
+### Tools
+
+#### AWS Management Console
+
+* Used for initial setup and testing
+* Provides visual interface for Step Functions workflow
+
+#### Python 3.x
+
+* Primary programming language for Lambda functions
+* AWS SDK (boto3) for QuickSight API interactions
+
+#### AWS CloudFormation
+
+* Infrastructure as Code (IaC) deployment
+* Resource management and updates
+
+### Best Practices
+
+#### Security
+
+* Follow least privilege principle for IAM roles.
+* Use resource-based policies where applicable.
+* Store sensitive parameters in AWS Secrets Manager.
+* Implement cross-account role assumptions securely.
+
+#### Error Handling and Resilience
+
+* Implement comprehensive error handling in Lambda functions.
+* Use Step Functions retry mechanisms for transient failures.
+* Set appropriate timeouts for both Lambda and Step Functions.
+* Include error details in CloudWatch logs for troubleshooting.
+
+#### Monitoring and Alerting
+
+* Create meaningful CloudWatch metrics for tracking.
+* Set up alarms for critical failure scenarios.
+* Use structured logging with correlation IDs.
+* Configure appropriate SNS topics for different notification types.
+
+
+
 ### Repository Structure
 
 ```    
